@@ -50,11 +50,13 @@ func authHelp() {
 	fmt.Println("Login options:")
 	fmt.Println("  --provider <name>    Provider to login with (openai, anthropic, google-antigravity)")
 	fmt.Println("  --device-code        Use device code flow (for headless environments)")
+	fmt.Println("  --setup-token        Use Claude CLI setup-token (anthropic only)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  picoclaw auth login --provider openai")
 	fmt.Println("  picoclaw auth login --provider openai --device-code")
 	fmt.Println("  picoclaw auth login --provider anthropic")
+	fmt.Println("  picoclaw auth login --provider anthropic --setup-token")
 	fmt.Println("  picoclaw auth login --provider google-antigravity")
 	fmt.Println("  picoclaw auth models")
 	fmt.Println("  picoclaw auth logout --provider openai")
@@ -64,6 +66,7 @@ func authHelp() {
 func authLoginCmd() {
 	provider := ""
 	useDeviceCode := false
+	useSetupToken := false
 
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
@@ -75,6 +78,8 @@ func authLoginCmd() {
 			}
 		case "--device-code":
 			useDeviceCode = true
+		case "--setup-token":
+			useSetupToken = true
 		}
 	}
 
@@ -88,13 +93,65 @@ func authLoginCmd() {
 	case "openai":
 		authLoginOpenAI(useDeviceCode)
 	case "anthropic":
-		authLoginPasteToken(provider)
+		if useSetupToken {
+			authLoginSetupToken()
+		} else {
+			authLoginPasteToken(provider)
+		}
 	case "google-antigravity", "antigravity":
 		authLoginGoogleAntigravity()
 	default:
 		fmt.Printf("Unsupported provider: %s\n", provider)
 		fmt.Println(supportedProvidersMsg)
 	}
+}
+
+func authLoginSetupToken() {
+	cred, err := auth.LoginSetupToken(os.Stdin)
+	if err != nil {
+		fmt.Printf("Login failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := auth.SetCredential("anthropic", cred); err != nil {
+		fmt.Printf("Failed to save credentials: %v\n", err)
+		os.Exit(1)
+	}
+
+	appCfg, err := loadConfig()
+	if err == nil {
+		// Update Providers (legacy format)
+		appCfg.Providers.Anthropic.AuthMethod = "setup-token"
+
+		// Update or add anthropic in ModelList
+		foundAnthropic := false
+		for i := range appCfg.ModelList {
+			if isAnthropicModel(appCfg.ModelList[i].Model) {
+				appCfg.ModelList[i].AuthMethod = "setup-token"
+				foundAnthropic = true
+				break
+			}
+		}
+
+		// If no anthropic in ModelList, add it
+		if !foundAnthropic {
+			appCfg.ModelList = append(appCfg.ModelList, config.ModelConfig{
+				ModelName:  "claude-sonnet-4.6",
+				Model:      "anthropic/claude-sonnet-4.6",
+				AuthMethod: "setup-token",
+			})
+		}
+
+		// Update default model
+		appCfg.Agents.Defaults.Model = "claude-sonnet-4.6"
+
+		if err := config.SaveConfig(getConfigPath(), appCfg); err != nil {
+			fmt.Printf("Warning: could not update config: %v\n", err)
+		}
+	}
+
+	fmt.Println("Setup-token saved for Anthropic!")
+	fmt.Println("Default model set to: claude-sonnet-4.6")
 }
 
 func authLoginOpenAI(useDeviceCode bool) {

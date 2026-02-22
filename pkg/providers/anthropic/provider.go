@@ -29,6 +29,7 @@ type Provider struct {
 	client      *anthropic.Client
 	tokenSource func() (string, error)
 	baseURL     string
+	useAPIKey   bool
 }
 
 func NewProvider(token string) *Provider {
@@ -38,12 +39,33 @@ func NewProvider(token string) *Provider {
 func NewProviderWithBaseURL(token, apiBase string) *Provider {
 	baseURL := normalizeBaseURL(apiBase)
 	client := anthropic.NewClient(
-		option.WithAuthToken(token),
+		option.WithAPIKey(token),
 		option.WithBaseURL(baseURL),
 	)
 	return &Provider{
 		client:  &client,
 		baseURL: baseURL,
+		useAPIKey: true,
+	}
+}
+
+func NewProviderWithBearerToken(token string) *Provider {
+	return NewProviderWithBearerTokenAndBaseURL(token, "")
+}
+
+func NewProviderWithBearerTokenAndBaseURL(token, apiBase string) *Provider {
+	baseURL := normalizeBaseURL(apiBase)
+	client := anthropic.NewClient(
+		option.WithAuthToken(token),
+		option.WithBaseURL(baseURL),
+		option.WithHeader("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+		option.WithHeader("user-agent", "picoclaw/1.0 (external, cli)"),
+		option.WithHeader("x-app", "cli"),
+	)
+	return &Provider{
+		client:  &client,
+		baseURL: baseURL,
+		useAPIKey: false,
 	}
 }
 
@@ -64,6 +86,16 @@ func NewProviderWithTokenSourceAndBaseURL(token string, tokenSource func() (stri
 	return p
 }
 
+func NewProviderWithTokenSourceBearer(token string, tokenSource func() (string, error)) *Provider {
+	return NewProviderWithTokenSourceBearerAndBaseURL(token, tokenSource, "")
+}
+
+func NewProviderWithTokenSourceBearerAndBaseURL(token string, tokenSource func() (string, error), apiBase string) *Provider {
+	p := NewProviderWithBearerTokenAndBaseURL(token, apiBase)
+	p.tokenSource = tokenSource
+	return p
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -77,7 +109,11 @@ func (p *Provider) Chat(
 		if err != nil {
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
-		opts = append(opts, option.WithAuthToken(tok))
+		if p.useAPIKey {
+			opts = append(opts, option.WithAPIKey(tok))
+		} else {
+			opts = append(opts, option.WithAuthToken(tok))
+		}
 	}
 
 	params, err := buildParams(messages, tools, model, options)

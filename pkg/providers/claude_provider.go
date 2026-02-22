@@ -37,6 +37,26 @@ func NewClaudeProviderWithTokenSourceAndBaseURL(
 	}
 }
 
+func NewClaudeProviderWithBearerToken(token string) *ClaudeProvider {
+	return &ClaudeProvider{
+		delegate: anthropicprovider.NewProviderWithBearerToken(token),
+	}
+}
+
+func NewClaudeProviderWithTokenSourceBearer(token string, tokenSource func() (string, error)) *ClaudeProvider {
+	return &ClaudeProvider{
+		delegate: anthropicprovider.NewProviderWithTokenSourceBearer(token, tokenSource),
+	}
+}
+
+func NewClaudeProviderWithTokenSourceBearerAndBaseURL(
+	token string, tokenSource func() (string, error), apiBase string,
+) *ClaudeProvider {
+	return &ClaudeProvider{
+		delegate: anthropicprovider.NewProviderWithTokenSourceBearerAndBaseURL(token, tokenSource, apiBase),
+	}
+}
+
 func newClaudeProviderWithDelegate(delegate *anthropicprovider.Provider) *ClaudeProvider {
 	return &ClaudeProvider{delegate: delegate}
 }
