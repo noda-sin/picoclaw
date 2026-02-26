@@ -100,6 +100,15 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 				ReplyTimeout:   5,
 			},
+				Chatwork: ChatworkConfig{
+				Enabled:      false,
+				APIToken:     "",
+				WebhookToken: "",
+				WebhookHost:  "0.0.0.0",
+				WebhookPort:  18794,
+				WebhookPath:  "/webhook/chatwork",
+				AllowFrom:    FlexibleStringSlice{},
+			},
 			WeComApp: WeComAppConfig{
 				Enabled:        false,
 				CorpID:         "",
