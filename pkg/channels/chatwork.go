@@ -25,10 +25,11 @@ const chatworkAPIBase = "https://api.chatwork.com/v2"
 // using HTTP webhook for receiving messages and REST API for sending.
 type ChatworkChannel struct {
 	*BaseChannel
-	config     config.ChatworkConfig
-	httpServer *http.Server
-	ctx        context.Context
-	cancel     context.CancelFunc
+	config       config.ChatworkConfig
+	httpServer   *http.Server
+	botAccountID string // Bot's own account_id for self-message filtering and mention detection
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // NewChatworkChannel creates a new Chatwork channel instance.
@@ -50,6 +51,17 @@ func (c *ChatworkChannel) Start(ctx context.Context) error {
 	logger.InfoC("chatwork", "Starting Chatwork channel")
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
+
+	// Fetch bot account info for self-message filtering and mention detection
+	if err := c.fetchBotInfo(); err != nil {
+		logger.WarnCF("chatwork", "Failed to fetch bot info (self-message filtering disabled)", map[string]any{
+			"error": err.Error(),
+		})
+	} else {
+		logger.InfoCF("chatwork", "Bot info fetched", map[string]any{
+			"account_id": c.botAccountID,
+		})
+	}
 
 	mux := http.NewServeMux()
 	path := c.config.WebhookPath
@@ -197,8 +209,28 @@ func (c *ChatworkChannel) processEvent(payload chatworkWebhookPayload) {
 	chatID := fmt.Sprintf("%d", event.RoomID)
 	content := event.Body
 
+	// Ignore messages from the bot itself
+	if c.botAccountID != "" && senderID == c.botAccountID {
+		logger.DebugCF("chatwork", "Ignoring own message", map[string]any{
+			"chat_id": chatID,
+		})
+		return
+	}
+
 	if strings.TrimSpace(content) == "" {
 		return
+	}
+
+	// If mention_only is enabled, only process messages that mention the bot
+	if c.config.MentionOnly && c.botAccountID != "" {
+		if !c.isBotMentioned(content) {
+			logger.DebugCF("chatwork", "Ignoring message without mention", map[string]any{
+				"sender_id": senderID,
+				"chat_id":   chatID,
+			})
+			return
+		}
+		content = c.stripBotMention(content)
 	}
 
 	metadata := map[string]string{
@@ -253,4 +285,45 @@ func (c *ChatworkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	return nil
+}
+
+// fetchBotInfo retrieves the bot's account_id from the Chatwork API.
+func (c *ChatworkChannel) fetchBotInfo() error {
+	req, err := http.NewRequest(http.MethodGet, chatworkAPIBase+"/me", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-ChatWorkToken", c.config.APIToken)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call /me: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/me returned status %d", resp.StatusCode)
+	}
+
+	var me struct {
+		AccountID int64 `json:"account_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
+		return fmt.Errorf("failed to decode /me response: %w", err)
+	}
+
+	c.botAccountID = fmt.Sprintf("%d", me.AccountID)
+	return nil
+}
+
+// isBotMentioned checks if the message body contains a [To:botAccountID] tag.
+func (c *ChatworkChannel) isBotMentioned(body string) bool {
+	return strings.Contains(body, "[To:"+c.botAccountID+"]")
+}
+
+// stripBotMention removes [To:botAccountID] tags from the message body.
+func (c *ChatworkChannel) stripBotMention(body string) string {
+	body = strings.ReplaceAll(body, "[To:"+c.botAccountID+"]", "")
+	return strings.TrimSpace(body)
 }

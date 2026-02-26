@@ -305,6 +305,7 @@ type ChatworkConfig struct {
 	WebhookPort  int                 `json:"webhook_port"   env:"PICOCLAW_CHANNELS_CHATWORK_WEBHOOK_PORT"`
 	WebhookPath  string              `json:"webhook_path"   env:"PICOCLAW_CHANNELS_CHATWORK_WEBHOOK_PATH"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from"     env:"PICOCLAW_CHANNELS_CHATWORK_ALLOW_FROM"`
+	MentionOnly  bool                `json:"mention_only"   env:"PICOCLAW_CHANNELS_CHATWORK_MENTION_ONLY"`
 }
 
 type HeartbeatConfig struct {

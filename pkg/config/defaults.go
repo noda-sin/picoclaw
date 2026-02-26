@@ -108,6 +108,7 @@ func DefaultConfig() *Config {
 				WebhookPort:  18794,
 				WebhookPath:  "/webhook/chatwork",
 				AllowFrom:    FlexibleStringSlice{},
+				MentionOnly:  false,
 			},
 			WeComApp: WeComAppConfig{
 				Enabled:        false,
