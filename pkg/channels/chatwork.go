@@ -197,7 +197,7 @@ type chatworkWebhookEvent struct {
 }
 
 func (c *ChatworkChannel) processEvent(payload chatworkWebhookPayload) {
-	if payload.WebhookEventType != "room_message_created" {
+	if payload.WebhookEventType != "message_created" {
 		logger.DebugCF("chatwork", "Ignoring non-message event", map[string]any{
 			"type": payload.WebhookEventType,
 		})
