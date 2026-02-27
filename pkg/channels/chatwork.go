@@ -317,13 +317,23 @@ func (c *ChatworkChannel) fetchBotInfo() error {
 	return nil
 }
 
-// isBotMentioned checks if the message body contains a [To:botAccountID] tag.
+// isBotMentioned checks if the message body contains a [To:botAccountID] tag
+// or a [rp aid=botAccountID ...] reply tag.
 func (c *ChatworkChannel) isBotMentioned(body string) bool {
-	return strings.Contains(body, "[To:"+c.botAccountID+"]")
+	if strings.Contains(body, "[To:"+c.botAccountID+"]") {
+		return true
+	}
+	return strings.Contains(body, "[rp aid="+c.botAccountID+" ")
 }
 
-// stripBotMention removes [To:botAccountID] tags from the message body.
+// stripBotMention removes [To:botAccountID] and [rp ...] tags from the message body.
 func (c *ChatworkChannel) stripBotMention(body string) string {
 	body = strings.ReplaceAll(body, "[To:"+c.botAccountID+"]", "")
+	// Remove [rp aid=... to=...]...[/rp] or just [rp ...] prefix
+	if idx := strings.Index(body, "[rp "); idx != -1 {
+		if end := strings.Index(body[idx:], "]"); end != -1 {
+			body = body[:idx] + body[idx+end+1:]
+		}
+	}
 	return strings.TrimSpace(body)
 }
