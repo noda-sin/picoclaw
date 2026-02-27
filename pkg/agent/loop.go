@@ -749,7 +749,7 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := agent.ContextWindow * 75 / 100
 
-	if len(newHistory) > 20 || tokenEstimate > threshold {
+	if len(newHistory) > 100 || tokenEstimate > threshold {
 		summarizeKey := agent.ID + ":" + sessionKey
 		if _, loading := al.summarizing.LoadOrStore(summarizeKey, true); !loading {
 			go func() {
@@ -765,6 +765,38 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 			}()
 		}
 	}
+}
+
+// sanitizeToolPairs ensures the message slice doesn't start with orphaned
+// tool_result messages (no preceding tool_use) or end with tool_use messages
+// that lack subsequent tool_result blocks. This prevents Anthropic API errors
+// about mismatched tool_use/tool_result pairs.
+func sanitizeToolPairs(messages []providers.Message) []providers.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	// Drop leading tool-role messages (orphaned tool_results)
+	for len(messages) > 0 && messages[0].ToolCallID != "" {
+		messages = messages[1:]
+	}
+
+	// Drop trailing assistant messages that have tool_calls (orphaned tool_use)
+	for len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if last.Role == "assistant" && len(last.ToolCalls) > 0 {
+			messages = messages[:len(messages)-1]
+			continue
+		}
+		// Also drop any trailing tool-role messages that lost their tool_use
+		if last.ToolCallID != "" {
+			messages = messages[:len(messages)-1]
+			continue
+		}
+		break
+	}
+
+	return messages
 }
 
 // forceCompression aggressively reduces context when the limit is hit.
@@ -791,8 +823,8 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	// 2. Second half of conversation
 	// 3. Last message
 
-	droppedCount := mid
-	keptConversation := conversation[mid:]
+	keptConversation := sanitizeToolPairs(conversation[mid:])
+	droppedCount := len(conversation) - len(keptConversation)
 
 	newHistory := make([]providers.Message, 0)
 
@@ -976,6 +1008,14 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string) {
 	if finalSummary != "" {
 		agent.Sessions.SetSummary(sessionKey, finalSummary)
 		agent.Sessions.TruncateHistory(sessionKey, 4)
+
+		// Sanitize remaining history to avoid orphaned tool_use/tool_result pairs
+		remaining := agent.Sessions.GetHistory(sessionKey)
+		sanitized := sanitizeToolPairs(remaining)
+		if len(sanitized) != len(remaining) {
+			agent.Sessions.SetHistory(sessionKey, sanitized)
+		}
+
 		agent.Sessions.Save(sessionKey)
 	}
 }

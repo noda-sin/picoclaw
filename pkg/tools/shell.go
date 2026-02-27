@@ -290,8 +290,12 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
+		// Remove URLs before extracting paths to avoid false positives
+		urlPattern := regexp.MustCompile(`https?://[^\s\"']+`)
+		cmdWithoutURLs := urlPattern.ReplaceAllString(cmd, "")
+
 		pathPattern := regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-		matches := pathPattern.FindAllString(cmd, -1)
+		matches := pathPattern.FindAllString(cmdWithoutURLs, -1)
 
 		for _, raw := range matches {
 			p, err := filepath.Abs(raw)
